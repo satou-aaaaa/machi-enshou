@@ -128,7 +128,7 @@
       const near = [S.c + 1, S.c - 1, S.c + 2, S.c - 2, S.c + 3].filter((x) => x > 0 && !alts.includes(x));
       const ds = [...shuffle(R, alts), ...near].slice(0, lv === 0 ? 2 : 3);
       const opts = shuffle(R, [S.c, ...ds]).map(keN), ans = keN(S.c);
-      const why = `${windStr(wd)}${wd.s ? `は${WTO[wd.dir]}（風下）へ` : "は上下左右へ"}広がります。蔵と道・空き地は火を止めます。${stepsOf(S.t)}手で${S.c}けんが燃えました。`;
+      const why = `${windStr(wd)}${wd.s ? `は${WTO[wd.dir]}（風下）と横へ` : "は上下左右へ"}広がります。${wd.s === 2 ? "飛び火は道や蔵を越えて2マス先へ。ほかは" : ""}蔵と道・空き地が火を止めます。${stepsOf(S.t)}手で${S.c}けんが燃えました。`;
       return { type: "act", media: MEDIA.kazu, q: COUNT_Q[si](windStr(wd)), opts, ans, ...sceneOut(S), why, v: `${si}:${S.f}:${S.g}:${wd.dir}${wd.s}` };
     };
   }
@@ -265,6 +265,23 @@
     return `<svg viewBox="0 0 ${W} ${W}" role="img" aria-label="${label}"><defs><marker id="wa" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7Z" fill="#1f5fa8"/></marker></defs>${out.join("")}</svg>`;
   }
 
+  // 図を文字で読む（読み上げ用。行ごとに西から東へ）。o.t があれば燃えた手、o.cands があればア〜エ。風あてで風を伏せるときも、ここには風を書かない
+  function gridText(P, o = {}) {
+    const n = P.n, g = o.g || P.g, t = o.t || null, rows = [];
+    for (let y = 0; y < n; y++) {
+      const cells = [];
+      for (let x = 0; x < n; x++) {
+        const i = y * n + x, c = g[i], ci = o.cands ? o.cands.indexOf(i) : -1;
+        let w = c === "k" ? "蔵" : c === "r" ? "道" : i === P.f ? "火元" : "家";
+        if (c === "h" && t && t[i] > 0) w = `燃${t[i]}`;
+        if (ci >= 0) w += `（${CL[ci]}）`;
+        cells.push(w);
+      }
+      rows.push(`${y + 1}行目：${cells.join("・")}`);
+    }
+    return rows;
+  }
+
   // part:seedOf:begin（shared-workflows の template/parts/data/seedOf.js の写し。ここでは直さない。node scripts/sync-template.mjs で写す）
   function seedOf(str) { let h = 2166136261; for (const ch of String(str)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
   // part:seedOf:end
@@ -292,6 +309,6 @@
     return h.map((id, i) => `${id}|${date}:h${i}`);
   }
 
-  const MCE = { KINDS, BY, GROUPS, LV, SRC, MEDIA, CL, GK, DIRS, WNAME, WTO, SNAME, windStr, moves, burn, countOf, stepsOf, withKura, kindsOf, seedOf, rng, make, keyOf, dailyTags, hardTags, pickN, gridSvg, CELL, M };
+  const MCE = { KINDS, BY, GROUPS, LV, SRC, MEDIA, CL, GK, gridText, DIRS, WNAME, WTO, SNAME, windStr, moves, burn, countOf, stepsOf, withKura, kindsOf, seedOf, rng, make, keyOf, dailyTags, hardTags, pickN, gridSvg, CELL, M };
   if (typeof module !== "undefined" && module.exports) module.exports = MCE; else root.MCE = MCE;
 })(typeof self !== "undefined" ? self : this);

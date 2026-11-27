@@ -187,6 +187,7 @@ html.a11y-cvd .ch.ng{border-width:3px}
 .seg .sub{min-height:48px;font-size:.88rem}
 .seg .sub[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
 .lbl{font-weight:700;font-size:.9rem;margin-top:6px}
+.gtxt{padding:.3rem .9rem 0;font-size:.85rem;color:var(--ink2)}.gtxt summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:700}.gtxt ul{margin:.2rem 0 .4rem;padding-left:1.2em}.gtxt p{margin:0}
 .labin{display:flex;flex-direction:column;gap:4px;padding:0 .9rem .6rem}
 .labin label{font-weight:700;font-size:.9rem}
 .labin input{width:100%;min-height:44px;accent-color:var(--shu)}
@@ -1647,7 +1648,7 @@ $("howto").addEventListener("close", () => { if (!load().tut) save((s) => { s.tu
 $("howto-ok").onclick = () => { save((s) => { s.tut = true; }); const d = $("howto"); d.close ? d.close() : d.removeAttribute("open"); }; // 押したらすぐ残す
 
 function home() {
-  Core.screens.route({}, home); Core.screens.mark(""); // 「戻る」でホームへ（sync-template の migrateBack）
+  Core.screens.route({ achView, cal: () => cal(), book, about, lab: () => lab(), practiceMenu }, home); Core.screens.mark(""); // 「進む」でも同じ画面にもどす（PR #1 の CodeRabbit） // 「戻る」でホームへ（sync-template の migrateBack）
   const s = load(), k = todayKey(), done = s.days[k], hdone = s.hdays[k];
   // 最後の1問を解いて結果を見る前に閉じた回は、開き直したら結果へ進める（記録をつける）
   for (const m of Object.keys(s.runs)) { const r = s.runs[m]; if (m !== "p" && m !== "e" && r && doneOf(r)) { MODE = m; return finish(); } }
@@ -1779,7 +1780,7 @@ function play() {
     ${showTip ? `<div class="tip"><b>今日のきほん：${tip[0]}</b><br>${tip[1]}</div>` : ""}
     <div class="ad ${isAd ? MCLS[P.media] || "m0" : "act"}" id="card">
       <div class="bar"><span>${P.n ? "🔥" : "📜"} ${esc(P.media)}</span><span>${P.n ? (P.show ? "風は？" : esc(G.windStr(P.wd))) : "どれ？"}</span></div>
-      ${P.svg ? `<div class="sky" id="sky">${P.svg}</div>` : ""}
+      ${P.svg ? `<div class="sky" id="sky">${P.svg}</div><details class="gtxt"><summary>図を文字で読む</summary><div id="gtxt">${gtxtHtml(P, P.show ? { t: P.burnT } : {})}</div></details>` : ""}
       <p class="sit" data-a11y-say>${esc(P.q)}</p>
       ${isAd ? `<p class="q" id="ask" data-a11y-say>${esc(P.q)}</p>` : ""}
       ${cur.wrong.length || cur.step === 2 ? "" : `<div class="sure-row">${Depth.sureHtml()}</div>`}
@@ -1816,12 +1817,16 @@ const GK = Object.keys(G.GROUPS);
 // 2段目のヒント：ちがう目安を1つ消す（消すのは決まった1つ。まちがいの数で変えない）
 const left2Of = () => GK.filter((x) => x !== cur.P.grp && !cur.w2.includes(x));
 const cut2Of = () => (cur.h2 ? left2Of().slice(0, 1) : []);
+// 図を文字で読む（読み上げでも町のようすと候補の位置が分かる。風あての問いでは風を書かない）
+function gtxtHtml(P, o) { return `<p>北が1行目、各行は西から東へ。燃N はN手目に燃えた家。${P.show && !o.cands ? "" : `風：${esc(G.windStr(P.wd))}。`}</p><ul>${G.gridText(P, o).map((r) => `<li>${esc(r)}</li>`).join("")}</ul>`; }
 const Q2 = "どの家を蔵に建てかえると、燃える家がいちばん少ない？";
 function askWhy() {
   const P = cur.P;
+  if (!$("msg")) return; // ホームなど別の画面に移っていれば何もしない（keep() が予約した呼び出し。PR #1 の CodeRabbit）
   document.querySelectorAll(".ch").forEach((b) => { b.disabled = true; if (P.opts[+b.dataset.j] === P.ans) { b.classList.remove("ng"); b.classList.add("ok"); } });
   $("msg").className = "msg"; $("msg").textContent = `✓ 正解！ では、蔵を1つ置くなら？${cur.jd && cur.jd.text ? "　" + cur.jd.text : ""}`;
   if ($("sky")) $("sky").innerHTML = G.gridSvg(P, { cands: P.cands, t: P.show ? P.burnT : null, label: `町の図。${G.windStr(P.wd)}。ア〜エは蔵に建てかえる候補の家` });
+  if ($("gtxt")) $("gtxt").innerHTML = gtxtHtml(P, { cands: P.cands, t: P.show ? P.burnT : null });
   document.querySelectorAll("#card [data-a11y-say]").forEach((e) => e.removeAttribute("data-a11y-say")); // 読み上げは2段目の問いと選び肢だけ（funka-level #1 の CodeRabbit）
   $("why").innerHTML = `<p class="note" data-a11y-say>${Q2}（図のア〜エ）</p><div class="why" role="group" aria-label="蔵に建てかえる家">${GK.map((x) => `<button data-g="${x}" data-a11y-say><b>${G.GROUPS[x].name}</b><small>${G.GROUPS[x].sub}を蔵にする</small></button>`).join("")}</div>`;
   document.querySelectorAll(".why button").forEach((b) => (b.onclick = () => chooseWhy(b.dataset.g)));
@@ -2040,7 +2045,8 @@ function bindMaps(P) {
 const LAB_N = 6, LAB_G0 = "hhhhrhhhkhhhhhhhkhrrhrrrhkhhhhhhhhhh", LAB_F0 = 1; // はじめの町：北の家が火元。道のすき間（3行3列）に蔵を置くと、弱い風なら止まり、強い風では飛び火で越える
 const TOOLS = [["h", "🏠 家"], ["k", "蔵"], ["r", "道・空き地"], ["f", "🔥 火元"]];
 const WINDS = [["", "風なし"], ["n", "北風"], ["e", "東風"], ["s", "南風"], ["w", "西風"]];
-let labS = null, labTimer = 0;
+let labS = null, labTimer = 0, labFocus = -1;
+document.addEventListener("core:screen", (e) => { if (labTimer && !(e.detail && e.detail.id === "lab")) { clearInterval(labTimer); labTimer = 0; } }); // ブラウザの「戻る」で画面を出たら止める（PR #1 の CodeRabbit）
 function lab() {
   Core.screens.mark("lab"); // 「戻る」でホームへ
   labS = labS || { g: LAB_G0.split(""), f: LAB_F0, dir: "n", s: 1, tool: "k", k: -1 };
@@ -2064,6 +2070,7 @@ function lab() {
     const T = burnt(), all = G.stepsOf(T), k = labS.k, name = { h: "家", k: "蔵", r: "道・空き地" };
     $("labgrid").innerHTML = labS.g.map((c, i) => { const on = k >= 0 && T[i] >= 0 && T[i] <= k, fire = i === labS.f; return `<button class="cell c-${c}${on ? " on" : ""}" data-i="${i}" aria-label="${Math.floor(i / LAB_N) + 1}行${(i % LAB_N) + 1}列 ${fire ? "火元の家" : name[c]}${on ? `・${T[i]}手目に燃えた` : ""}">${fire ? "🔥" : on ? T[i] : c === "k" ? "蔵" : c === "h" ? "🏠" : ""}</button>`; }).join("");
     document.querySelectorAll("#labgrid .cell").forEach((b) => (b.onclick = () => put(+b.dataset.i)));
+    if (labFocus >= 0) { const f = document.querySelector(`#labgrid .cell[data-i="${labFocus}"]`); labFocus = -1; if (f) f.focus(); } // 押したマスにフォーカスをもどす（キーボードで続けて置ける。PR #1 の CodeRabbit）
     const shown = k < 0 ? 0 : T.filter((x) => x >= 0 && x <= k).length;
     $("labv").innerHTML = k < 0 ? `燃える家：？<br><small>「火をつける」で広がりを見る</small>` : `燃えた家：${shown}けん<br><small>${Math.min(k, all)}手目${k >= all ? "（もう広がらない）" : ""}・全部で${G.countOf(T)}けん</small>`;
     $("labw").textContent = G.windStr(wdOf());
@@ -2073,11 +2080,11 @@ function lab() {
     $("step1").disabled = k >= all;
   };
   const put = (i) => {
-    stop(); labS.k = -1;
+    stop(); labS.k = -1; labFocus = i;
     if (labS.tool === "f") { labS.g[i] = "h"; labS.f = i; } else if (i === labS.f && labS.tool !== "h") { toast("火元は家だけに置けます。先に火元を別の家へ"); return draw(); } else labS.g[i] = labS.tool;
     draw();
   };
-  const step = () => { const all = G.stepsOf(burnt()); labS.k = Math.min(all, labS.k + 1); if (labS.k >= all) stop(); draw(); };
+  const step = () => { if (!$("labgrid")) return stop(); const all = G.stepsOf(burnt()); labS.k = Math.min(all, labS.k + 1); if (labS.k >= all) stop(); draw(); };
   $("back").onclick = () => { stop(); home(); };
   document.querySelectorAll("#tools button").forEach((b) => (b.onclick = () => { labS.tool = b.dataset.tool; draw(); }));
   document.querySelectorAll("#winds button").forEach((b) => (b.onclick = () => { stop(); labS.dir = b.dataset.dir; labS.k = -1; draw(); }));

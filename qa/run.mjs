@@ -26,9 +26,9 @@ const PINS = "kwyear:1:1.3,c5calm:0:16:hrrhrhrrrrhrrrkkhhhhhkhhh:0,yokostop:0:3.
 const DOWN = { n: [0, 1], s: [0, -1], e: [-1, 0], w: [1, 0] };
 function spread(g, n, f, dir, st) {
   const at = (x, y) => (x >= 0 && y >= 0 && x < n && y < n ? y * n + x : -1);
-  const fire = new Set([f]); let edge = [f];
+  const fire = new Map([[f, 0]]); let edge = [f], k = 0; // マス → 燃えた手
   const nb = (c) => { const x = c % n, y = Math.floor(c / n); if (!st) return [at(x + 1, y), at(x - 1, y), at(x, y + 1), at(x, y - 1)]; const [a, b] = DOWN[dir]; const out = [at(x + a, y + b), at(x + b, y + a), at(x - b, y - a)]; if (st === 2) out.push(at(x + 2 * a, y + 2 * b)); return out; };
-  while (edge.length) { const nx = []; for (const c of edge) for (const d of nb(c)) if (d >= 0 && g[d] === "h" && !fire.has(d)) { fire.add(d); nx.push(d); } edge = nx; }
+  while (edge.length) { k++; const nx = []; for (const c of edge) for (const d of nb(c)) if (d >= 0 && g[d] === "h" && !fire.has(d)) { fire.set(d, k); nx.push(d); } edge = nx; }
   return fire;
 }
 const kn = (x) => `${x}けん`;
@@ -54,9 +54,9 @@ const SRCOK = /^https:\/\/(www\.city\.kawagoe\.saitama\.jp\/|www\.fdma\.go\.jp\/
       if (k.grid) {
         const st = P.wd.s, fire = spread(P.g, P.n, P.f, P.wd.dir, st);
         if (P.g.length !== P.n * P.n || P.g[P.f] !== "h" || P.n !== k.n) why.push("町の形がちがう");
-        if (G.countOf(P.burnT) !== fire.size || P.burnT.some((x, i) => (x >= 0) !== fire.has(i))) why.push("燃え方が決まりとちがう");
+        if (G.countOf(P.burnT) !== fire.size || P.burnT.some((x, i) => (fire.has(i) ? fire.get(i) : -1) !== x)) why.push("燃え方（燃えたマスと燃えた手）が決まりとちがう");
         if (/^c/.test(k.id) && P.ans !== kn(fire.size)) why.push("燃える家の数がちがう");
-        if (/^k/.test(k.id)) { if (P.ans !== wname(P.wd.dir, st)) why.push("風あての答えがちがう"); const sig = (d, t) => [...spread(P.g, P.n, P.f, d, t)].sort((a, b) => a - b).join(); const me = sig(P.wd.dir, st); for (const o of P.opts) { if (o === P.ans) continue; const m = o.match(/^(.)風・(弱い|強い)風$/), d = m ? { 北: "n", 南: "s", 東: "e", 西: "w" }[m[1]] : "", t = m ? (m[2] === "強い" ? 2 : 1) : 0; if (sig(d, t) === me) why.push("ほかの風でも同じ燃え方"); } }
+        if (/^k/.test(k.id)) { if (P.ans !== wname(P.wd.dir, st)) why.push("風あての答えがちがう"); const sig = (d, t) => [...spread(P.g, P.n, P.f, d, t).keys()].sort((a, b) => a - b).join(); const me = sig(P.wd.dir, st); for (const o of P.opts) { if (o === P.ans) continue; const m = o.match(/^(.)風・(弱い|強い)風$/), d = m ? { 北: "n", 南: "s", 東: "e", 西: "w" }[m[1]] : "", t = m ? (m[2] === "強い" ? 2 : 1) : 0; if (sig(d, t) === me) why.push("ほかの風でも同じ燃え方"); } }
         if (!P.q.includes(wname(P.wd.dir, st)) && /^c/.test(k.id)) why.push("問いに風が無い");
         // 2段目：ア〜エの家を蔵にしたときの燃える家の数（別に数える）。いちばん少ないのが1つだけ・答えがそれ・2けん以上守れる
         const cn = P.cands.map((c) => spread(P.g.slice(0, c) + "k" + P.g.slice(c + 1), P.n, P.f, P.wd.dir, st).size), best = Math.min(...cn);
@@ -183,8 +183,8 @@ try {
   const p = await newPage();
   check("はじめて開くと遊び方が出る", await p.locator("#core-coach").waitFor({ timeout: 3000 }).then(() => true, () => false));
   { const c = await browser.newContext(); const r = await c.newPage(); await r.goto(url); await r.waitForTimeout(200); let again = 0;
-    for (let i = 0; i < 10; i++) { await r.evaluate(() => localStorage.clear()); await r.reload(); await r.waitForTimeout(200); await r.keyboard.press("Escape"); await r.reload(); await r.waitForTimeout(200); again += await r.locator("#howto[open]").count(); }
-    check("遊び方を Esc で閉じてすぐ読み直しても出ない（10回）", again === 0);
+    for (let i = 0; i < 10; i++) { await r.evaluate(() => localStorage.clear()); await r.reload(); await r.waitForTimeout(200); await r.keyboard.press("Escape"); await r.waitForTimeout(50); const shown = async () => (await r.locator("#howto[open]").count()) + (await r.evaluate(() => !!(window.Core && Core.coach && Core.coach.active()) || [...document.querySelectorAll("#core-coach")].some((e) => e.getClientRects().length > 0))); again += await shown(); await r.reload(); await r.waitForTimeout(200); again += await shown(); }
+    check("はじめての案内（吹き出し・遊び方）は Esc で消え、すぐ読み直しても出ない（10回。PR #1 の CodeRabbit）", again === 0);
   { const c = await browser.newContext(); const r = await c.newPage(); const big = []; // 題が h1{flex:1} で縦に伸び（伸びない形と比べて4pxより高ければ失敗）、iPad の縦で大きなすき間が出た（shared-workflows incidents/2026-11-07-title-stretched.md）
     for (const [w, h] of [[820, 1180], [390, 844], [1280, 800]]) { await r.setViewportSize({ width: w, height: h }); await r.goto(url); await r.waitForTimeout(200); await r.keyboard.press("Escape"); await r.waitForTimeout(100);
       const v = await r.evaluate(() => { const e = [...document.querySelectorAll(".title")].find((x) => x.offsetParent); if (!e) return null; const h = e.getBoundingClientRect().height; const f = e.style.flex; e.style.flex = "none"; const n = e.getBoundingClientRect().height; e.style.flex = f; return h - n; });
@@ -322,13 +322,14 @@ try {
     check("町をつくって燃やす：6×6のマスと、置くもの・風の向き・強さのボタン（押す所は44px以上）", await p.locator("#labgrid .cell").count() === 36 && (await p.$$eval("#labgrid .cell, #tools button, #winds button, #power button, #fire, #step1", (b) => b.every((x) => Math.round(x.getBoundingClientRect().height) >= 44))) && (await p.textContent("#labv")).includes("？"));
     await p.click("#step1"); await p.click("#step1"); await p.click("#step1"); // 1回目は火元だけ（0手目）
     const t2 = await p.evaluate(() => [...document.querySelectorAll("#labgrid .cell.on")].map((b) => b.textContent));
-    const G0 = "hhhhrhhhkhhhhhhhkhrrhrrrhkhhhhhhhhhh", f0 = 1, T0 = G.burn(G0, 6, f0, { dir: "n", s: 1 });
-    check("町をつくって燃やす：「1手すすめる」で、北風・弱い風の決まりどおり2手目まで燃える（数字は燃えた手）", t2.length === T0.filter((x) => x >= 0 && x <= 2).length && (await p.textContent("#labv")).includes("2手目"), JSON.stringify(t2));
+    const G0 = "hhhhrhhhkhhhhhhhkhrrhrrrhkhhhhhhhhhh", f0 = 1, S0 = spread(G0, 6, f0, "n", 1), T0 = Array.from({ length: 36 }, (_, i) => (S0.has(i) ? S0.get(i) : -1)); // 期待は別に書いた決まり spread から
+    const t2c = await p.evaluate(() => [...document.querySelectorAll("#labgrid .cell.on")].map((b) => +b.dataset.i));
+    check("町をつくって燃やす：「1手すすめる」で、北風・弱い風の決まりどおり2手目まで燃え、どのマスも決まりどおりの手の数字", t2.length === T0.filter((x) => x >= 0 && x <= 2).length && t2c.every((i, j) => (i === f0 ? t2[j] === "🔥" : +t2[j] === T0[i])) && (await p.textContent("#labv")).includes("2手目"), JSON.stringify(t2));
     await p.click('#tools button[data-tool="k"]'); await p.click('#labgrid .cell[data-i="20"]');
     check("町をつくって燃やす：マスを押すと蔵に変わり、火は消えて町にもどる", (await p.getAttribute('#labgrid .cell[data-i="20"]', "aria-label")).includes("蔵") && await p.locator("#labgrid .cell.on").count() === 0);
     await p.click('#winds button[data-dir="s"]'); await p.click('#power button[data-s="2"]');
     await p.evaluate(() => A11y.set("calm", true)); await p.click("#fire");
-    const G1 = G0.slice(0, 20) + "k" + G0.slice(21), n1 = G.countOf(G.burn(G1, 6, f0, { dir: "s", s: 2 }));
+    const G1 = G0.slice(0, 20) + "k" + G0.slice(21), n1 = spread(G1, 6, f0, "s", 2).size;
     check("町をつくって燃やす：南風・強い風で「火をつける」（動きを減らすなら、すぐ最後まで）と、決まりどおりの数が燃える", (await p.textContent("#labv")).includes(`燃えた家：${n1}けん`) && (await p.textContent("#labw")).includes("南風・強い風"), await p.textContent("#labv"));
     await p.evaluate(() => A11y.set("calm", false));
     check("町をつくって燃やす：記録を増やさない", JSON.stringify(await mem(p)) === before);
@@ -337,6 +338,10 @@ try {
     await p.evaluate(() => __nm.save((s) => { s.runs.p = { mode: "p", date: __nm.todayKey(), list: ["k6weak|bar1"], res: [], cur: null, id: "bar" }; })); await p.evaluate(() => __nm.play("p")); await p.waitForTimeout(100);
     const ans = await p.evaluate(() => __nm.cur().P.ans);
     check("風あての問い：帯と図に吹いている風（答え）を出さない", !(await p.textContent("#card .bar")).includes(ans.split("・")[0]) && (await p.textContent("#card .bar")).includes("風は？") && await p.locator("#sky line[marker-end]").count() === 0, await p.textContent("#card .bar"));
+    const gt = await p.evaluate(() => document.querySelector("#gtxt").textContent);
+    check("図を文字で読む：行ごとの家・蔵・道と燃えた手が読め、風あてでは風（答え）を書かない", /1行目：/.test(gt) && /燃\d/.test(gt) && !gt.includes(ans) && !/[北南東西]風/.test(gt), gt.slice(0, 120));
+    await p.click(`.ch[data-j="${await ansIdx(p)}"]`); await p.waitForTimeout(150);
+    check("図を文字で読む：2段目ではア〜エの位置も読める", (await p.evaluate(() => ["ア", "イ", "ウ", "エ"].every((x) => document.querySelector("#gtxt").textContent.includes(`（${x}）`)))));
     await p.evaluate(() => __nm.save((s) => { delete s.runs.p; })); await p.evaluate(() => __nm.home()); }
   await p.context().close();
 
@@ -541,11 +546,12 @@ try {
   // キーボードだけで遊べる（Tab と Enter）
   {
     const q = await newPage(); await closeHow(q);
-    await q.focus("#go-d"); await q.keyboard.press("Enter"); await q.waitForTimeout(100);
-    const j = await ansIdx(q);
-    await q.focus(`.ch[data-j="${j}"]`); await q.keyboard.press("Enter"); await q.waitForTimeout(100);
-    if (await q.locator(".why button").count()) { await q.focus(`.why button[data-g="${await q.evaluate(() => __nm.cur().P.grp)}"]`); await q.keyboard.press("Enter"); await q.waitForTimeout(100); }
-    check("キーボードだけで選んで答えられる（2段目もキーボードで）", await q.locator(".verdict").count() === 1);
+    // 2段目が必ず出る町の問題で、Tab で選び肢・2段目のボタンまで進んでから Enter（focus() で直に飛ばない。PR #1 の CodeRabbit）
+    await q.evaluate(() => __nm.save((s) => { s.runs.p = { mode: "p", date: __nm.todayKey(), list: ["c5weak|kb1"], res: [], cur: null, id: "kb" }; })); await q.evaluate(() => __nm.play("p")); await q.waitForTimeout(100);
+    const tabTo = async (sel) => { for (let n = 0; n < 40; n++) { await q.keyboard.press("Tab"); if (await q.evaluate((x) => !!document.activeElement && document.activeElement.matches(x), sel)) return true; } return false; };
+    const r1 = await tabTo(`.ch[data-j="${await ansIdx(q)}"]`); await q.keyboard.press("Enter"); await q.waitForTimeout(150);
+    const r2 = await q.locator(".why button").count() === 4 && await tabTo(`.why button[data-g="${await q.evaluate(() => __nm.cur().P.grp)}"]`); await q.keyboard.press("Enter"); await q.waitForTimeout(150);
+    check("キーボードだけで（Tab と Enter）選んで答えられる（2段目もキーボードで）", r1 && r2 && await q.locator(".verdict").count() === 1, `${r1} ${r2}`);
     await q.context().close();
   }
 } catch (e) { check("ブラウザでの検査が最後まで動く", false, e.stack.split("\n").slice(0, 3).join(" ")); }
